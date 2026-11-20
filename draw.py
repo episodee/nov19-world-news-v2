@@ -388,11 +388,78 @@ def world(d,x,y):
     d.rectangle((x,y,x+266,y+204),fill=(224,233,230))
     shapes=[[(8,55),(35,39),(66,42),(85,66),(69,90),(50,94),(49,114),(31,94),(19,90)],[(60,110),(83,120),(89,142),(74,176),(64,154)],[(102,29),(128,25),(131,44),(114,51)],[(113,59),(150,55),(166,65),(203,50),(240,66),(248,87),(228,109),(201,100),(194,126),(173,117),(158,90),(138,87),(122,80)],[(119,91),(144,90),(164,118),(150,155),(130,159),(116,125)],[(206,142),(229,136),(248,153),(238,173),(213,169)],[(65,191),(103,184),(156,188),(207,183),(249,195)]]
     for pts in shapes: d.polygon([(x+a,y+b) for a,b in pts],fill=(183,198,182),outline=(127,148,135))
-    for n,(_, (a,b)) in enumerate(BRIEFS,1):
-        cx,cy=x+a,y+b
+    # Dots first, labels after: no dot ever covers a number (the old
+    # code drew white numbers centred on the dots through ScaleDraw,
+    # which double-scaled the centring offset, so numbers landed
+    # up-left of their dots, white on pale sea — pins 7/8/9/10/22
+    # worst. Now: dark-ink numbers OUTSIDE the dot, joined by a short
+    # leader line, placed greedily (E/W/S/N/diagonals) so the label
+    # stays inside the canvas and clear of every other dot/label.
+    dots=[(x+a,y+b) for _,(a,b) in BRIEFS]
+    for cx,cy in dots:
         d.ellipse((cx-8,cy-8,cx+8,cy+8),fill=RED,outline=PAPER)
-        st=str(n); f=SANS_B(8)
-        d.text((cx-d.textlength(st,font=f)/2,cy-5),st,font=f,fill='white')
+    placed=[]
+    for n,(_,(a,b)) in enumerate(BRIEFS,1):
+        cx,cy=x+a,y+b
+        st=str(n)
+        w=SANS_B(10).getlength(st)
+        h=11
+        cands=[(cx+11,cy-5),(cx-11-w,cy-5),(cx-w/2,cy+11),(cx-w/2,cy-20),
+               (cx+11,cy-16),(cx+11,cy+7),(cx-11-w,cy-16),(cx-11-w,cy+7),
+               (cx+20,cy-22),(cx-20,cy-22),(cx+20,cy+11),(cx-20,cy+11),
+               (cx+24,cy-5),(cx-24-w,cy-5),(cx-w/2,cy+24),(cx-w/2,cy-33),
+               (cx+26,cy-27),(cx+26,cy+16),(cx-26-w,cy-27),(cx-26-w,cy+16)]
+        lx,ly=None,None
+        leader=None
+        for px,py in cands:
+            px=int(round(px)); py=int(round(py))
+            if px<x+1 or py<y+1 or px+w>x+265 or py+h>y+203:
+                continue
+            box=(px,py,px+w,py+h)
+            pad=(px-1,py-1,px+w+1,py+h+1)
+            # Dots are already expanded to radius 9 (1px clearance), so
+            # the dot test uses the raw box; the padded box is only for
+            # label-vs-label clearance.
+            if any(box[0]<dx+9 and box[2]>dx-9 and box[1]<dy+9 and box[3]>dy-9
+                   for dx,dy in dots):
+                continue
+            if any(pad[0]<qx1 and pad[2]>qx0 and pad[1]<qy1 and pad[3]>qy0
+                   for (qx0,qy0,qx1,qy1) in placed):
+                continue
+            # Leader: dot edge to the nearest point of the label box.
+            # It must not cross any OTHER pin dot (a far label whose
+            # leader cuts across a neighbour's dot reads as a defect).
+            nx=min(max(cx,px),px+w); ny=min(max(cy,py),py+h)
+            vx,vy=nx-cx,ny-cy
+            ln=(vx*vx+vy*vy)**0.5
+            if ln<=0:
+                continue
+            sx,sy=cx+vx/ln*9,cy+vy/ln*9
+            ok=True
+            for dx,dy in dots:
+                if dx==cx and dy==cy:
+                    continue
+                ax,ay=nx-sx,ny-sy
+                seg2=ax*ax+ay*ay
+                t=0.0 if seg2==0 else max(0.0,min(1.0,((dx-sx)*ax+(dy-sy)*ay)/seg2))
+                qx2,qy2=sx+t*ax,sy+t*ay
+                if (dx-qx2)**2+(dy-qy2)**2 < 9.5**2:
+                    ok=False
+                    break
+            if not ok:
+                continue
+            lx,ly=px,py
+            leader=(sx,sy,nx,ny)
+            break
+        if lx is None:
+            lx,ly=int(round(cx+11)),int(round(cy-5))
+            nx=min(max(cx,lx),lx+w); ny=min(max(cy,ly),ly+h)
+            vx,vy=nx-cx,ny-cy
+            ln=(vx*vx+vy*vy)**0.5 or 1.0
+            leader=(cx+vx/ln*9,cy+vy/ln*9,nx,ny)
+        d.line((leader[0],leader[1],leader[2],leader[3]),fill=INK,width=1)
+        d.text((lx,ly),st,font=SANS_B(10),fill=INK)
+        placed.append((lx-1,ly-1,lx+w+1,ly+h+1))
 
 
 def main():

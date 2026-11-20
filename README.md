@@ -52,10 +52,23 @@ Those details are intended for the full 1024px image, not claimed to be readable
 at thumbnail size. Map shapes are schematic; space/global stories use ocean
 margin pins rather than implying a terrestrial observation site.
 
+Re-render (Hermes workflow, nemesis order 2026-11-20): the masthead is now
+three levels with the date as the largest headline — "19 NOVEMBER 2026" at
+64pt serif bold in red, above the 34pt paper name — following the top-1
+pattern that the date is the headline. DATE CHECK is now six spot checks
+(summit, ICJ ruling, GTA VI launch, Anthropic IPO all 19 Nov; markets
+labelled Wed 18 Nov close; Akvan labelled forecast Fri 20 Nov). Map pins
+were loosened so no two sit closer than ~20px. Briefs are set 12pt on 16pt
+leading and the footer/markets/sources lines end well inside the right edge,
+so nothing clips. Hero art and the world map render supersampled 4x and
+downscale with LANCZOS. At 200px the masthead, date, stat strip and the three
+hero headlines read; the lower sections parse as rows rather than a grey block.
+
 ## Verification results
 
-Final PNG: 1024 × 1024 RGB, 226,976 bytes (below 1 MiB). Both
+Final PNG: 1024 × 1024 RGB, 257,354 bytes (below 1 MiB). Both
 `out/entry.png` and `out-second/entry.png` passed the copier's read-back check
 and `cmp` found them byte-identical. Both final render sizes were opened and
 reviewed; no overlapping, clipped or garbled text was seen. Count: 3 + 12 + 26
-= 41 story units. No competition submission or repository creation was run.
+= 41 story units. The re-render was also run twice from the same draw.py and
+is byte-identical across runs. No competition submission or repository creation was run.

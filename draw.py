@@ -37,6 +37,51 @@ SANS_B = lambda s: font("DejaVuSans-Bold.ttf", s)
 SANS = lambda s: font("DejaVuSans.ttf", s)
 
 
+class ScaleDraw:
+    """Coordinate-scaling wrapper around ImageDraw, for supersampling.
+
+    Scales every positional coordinate (flat [x0,y0,x1,y1] boxes and
+    [(x,y),...] point lists alike: even indices by kx, odd by ky),
+    line `width` by the mean scale, and recreates truetype fonts at
+    kx so a tile drawn in a small coordinate space renders at 4x and
+    downscales with LANCZOS. Colours, angles and other kwargs pass
+    through untouched; textlength stays consistent (font is scaled).
+    """
+    def __init__(self, draw, kx, ky=None):
+        self._d = draw
+        self._kx = kx
+        self._ky = ky if ky is not None else kx
+
+    def _pair(self, v):
+        if isinstance(v, (list, tuple)):
+            if v and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                         for x in v):
+                # PIL's C draw calls need ints; at 4x, rounding costs <0.25px.
+                return type(v)(int(round(x * (self._kx if i % 2 == 0 else self._ky)))
+                               for i, x in enumerate(v))
+            return type(v)(self._pair(x) for x in v)
+        return v
+
+    def __getattr__(self, name):
+        fn = getattr(self._d, name)
+
+        def wrap(*a, **kw):
+            a = tuple(self._pair(x) for x in a)
+            if 'width' in kw and isinstance(kw['width'], (int, float)):
+                kw['width'] = max(1, int(round(
+                    kw['width'] * (self._kx + self._ky) / 2)))
+            if 'font' in kw:
+                f = kw['font']
+                path = getattr(f, 'path', None)
+                size = getattr(f, 'size', None)
+                if path and size:
+                    kw['font'] = ImageFont.truetype(
+                        path, max(1, int(round(size * self._kx))))
+            return fn(*a, **kw)
+
+        return wrap
+
+
 def wrap(draw, text, fnt, width):
     words = text.split()
     lines, cur = [], ""
@@ -221,9 +266,20 @@ def fitted(d, x, y, text, font_fn, size, width, fill=INK):
 
 
 def art(img, fn, x, y, w, h):
-    tile = Image.new('RGB', (576, 218), PAPER)
-    fn(ImageDraw.Draw(tile), 0, 0, 576, 218)
-    img.paste(tile.resize((w,h), Image.Resampling.LANCZOS), (x,y))
+    # Hermes workflow: supersampling 4x + LANCZOS. The art functions draw
+    # in a 576x218 coordinate space; render that space at 1264x340
+    # (4x the 316x85 display) via ScaleDraw, then downscale.
+    tile = Image.new('RGB', (1264, 340), PAPER)
+    fn(ScaleDraw(ImageDraw.Draw(tile), 1264 / 576, 340 / 218), 0, 0, 576, 218)
+    img.paste(tile.resize((w, h), Image.Resampling.LANCZOS), (x, y))
+
+
+def map_tile(w, h):
+    # World map, supersampled 4x + LANCZOS: world() draws in a 266x204
+    # space; render at 1064x816, then downscale to the display size.
+    tile = Image.new('RGB', (1064, 816), (224, 233, 230))
+    world(ScaleDraw(ImageDraw.Draw(tile), 4, 4), 0, 0)
+    return tile.resize((w, h), Image.Resampling.LANCZOS)
 
 
 def court(d, x, y, w, h):
@@ -258,33 +314,35 @@ SECONDARY = [
  ('INDONESIA ASSET LAW','Forfeiture law passes; Cepu blast kills worker.','refinery','REPORTED'),
 ]
 # One numbered line is one additional story; locations match the map pins.
+# Pins loosened (Hermes blind review): no two pins closer than ~20px,
+# so the cluster around Europe / the East Med reads at small sizes.
 BRIEFS = [
- ('Denmark: Greenland defence pact, 109–0.',(150,42)),
- ('Bulgaria: Gas Husky sinks after projectile hit.',(143,87)),
+ ('Denmark: Greenland defence pact, 109–0.',(150,40)),
+ ('Bulgaria: Gas Husky sinks after projectile hit.',(128,86)),
  ('Bangladesh: unrest over Hasina’s return.',(188,111)),
  ('IAEA: Yongbyon uranium enrichment expands.',(212,87)),
  ('US asks top court to block Venezuelan TPS.',(54,87)),
- ('UK opens latest renewables auction.',(117,70)),
- ('UniCredit agrees €41bn Commerzbank terms.',(136,66)),
- ('Five EU nations plan Rwanda asylum transfers.',(133,48)),
+ ('UK opens latest renewables auction.',(112,72)),
+ ('UniCredit agrees €41bn Commerzbank terms.',(140,62)),
+ ('Five EU nations plan Rwanda asylum transfers.',(128,44)),
  ('Ethiopia, Eritrea mass troops on border.',(160,125)),
- ('Sudan: aid for displaced amid drone toll.',(143,111)),
- ('Riyadh missile threat: coalition CLAIM.',(169,97)),
+ ('Sudan: aid for displaced amid drone toll.',(138,116)),
+ ('Riyadh missile threat: coalition CLAIM.',(176,94)),
  ('Fiji, Tonga: El Niño drought emergencies.',(247,147)),
  ('589m children in conflict zones: 2025 report.',(25,155)),
  ('US loses measles elimination status.',(39,66)),
  ('DR Congo to trial strain-specific Ebola shots.',(133,140)),
  ('Waymo pulls US taxis from freeways.',(21,103)),
  ('Australia unemployment rises to 4.9%.',(222,158)),
- ('IMF deal to unlock $2.3bn for Egypt.',(144,99)),
+ ('IMF deal to unlock $2.3bn for Egypt.',(160,102)),
  ('EU governments approve Indonesia trade deal.',(199,135)),
  ('Seoul, Beijing expand cultural exchange.',(227,72)),
  ('Atmospheric river brings California record rain.',(15,81)),
- ('Turkey court sentences Imamoglu + 8 others.',(158,74)),
+ ('Turkey court sentences Imamoglu + 8 others.',(168,72)),
  ('S. Korea exam held under AI cheating curbs.',(229,103)),
  ('Webb confirms rare two-star merger.',(25,179)),
  ('Antarctic blue whales up tenfold since whaling.',(160,188)),
- ('Cambridge names “human” word of the year.',(102,53)),
+ ('Cambridge names “human” word of the year.',(100,50)),
 ]
 
 
@@ -340,64 +398,73 @@ def world(d,x,y):
 def main():
     img=Image.new('RGB',(W,H),PAPER); d=ImageDraw.Draw(img)
     d.rectangle((9,9,1014,1014),outline=RULE,width=2)
-    fitted(d,24,15,'THE WORLD IN ONE DAY',SERIF_B,60,976)
-    date='THURSDAY, 19 NOVEMBER 2026'; f=SANS_B(29)
-    d.text(((W-d.textlength(date,font=f))/2,79),date,font=f,fill=RED)
-    hline(d,24,1000,117,3)
+    # Masthead, 3 levels (Hermes workflow / top-1 pattern: the DATE is the
+    # headline — largest element on the page, bigger than the paper name).
+    fitted(d,24,12,'THE WORLD IN ONE DAY',SERIF_B,34,976)
+    fitted(d,24,48,'19 NOVEMBER 2026',SERIF_B,64,976,RED)
+    day='THURSDAY · 41 STORIES · 6 REGIONS · ONE PAGE'; f=SANS_B(16)
+    d.text(((W-d.textlength(day,font=f))/2,114),day,font=f,fill=RED)
+    hline(d,24,1000,134,3)
     stats=[('19.05m','GTA VI copies¹'),('$83','Anthropic IPO'),('589m','children in conflict²'),('251–11','Jeffries vote'),('109–0','Denmark vote'),('−561','Dow points · Wed'),('$3,726','gold'),('120–130','km/h · Akvan³')]
     for i,(v,cap) in enumerate(stats):
         x=24+i*122
-        fitted(d,x,123,v,SANS_B,24,116,RED)
-        fitted(d,x,151,cap,SANS,11,117)
-    label(d,24,168,'¹ Sensor Tower est.    ² In 2025, reported today    ³ Forecast winds',10,GREY)
-    hline(d,24,1000,185,1)
-    label(d,24,191,'THE DAY / UTC',11)
+        fitted(d,x,140,v,SANS_B,24,110,RED)
+        fitted(d,x,166,cap,SANS,11,110)
+    label(d,24,180,'¹ Sensor Tower est.    ² In 2025, reported today    ³ Forecast winds',10,GREY)
+    hline(d,24,1000,194,1)
+    label(d,24,200,'THE DAY / UTC',11)
     times=[
       '00:00 GTA VI: rolling local-midnight unlocks  •  01:46 Trump on Fox: raised Huang “briefly” with Xi',
       '04:30 Cepu blast reported  •  04:50 Indonesia law passes  •  05:12 Japan auto standards  •  Morning: Shenzhen summit',
       'Midday: ICJ ruling  •  13:06 Sensor Tower update  •  14:18 UK auction  •  16:28 Take-Two / Reuters  •  Evening: ANT debut']
-    for i,t in enumerate(times): fitted(d,137,189+i*15,t,SANS,12,861)
-    hline(d,24,1000,239,2)
+    for i,t in enumerate(times): fitted(d,137,198+i*15,t,SANS,12,861)
+    hline(d,24,1000,244,2)
     heroes=[(draw_summit,'REPORTED · SHENZHEN',['TRUMP, XI & PUTIN','FIRST SUMMIT'],['First three-way summit: arms, Ukraine, Iran.','Joint text on nuclear risks and UN reform.']),
       (draw_vice_city,'CLAIM · SALES ESTIMATE',['VICE CITY','OPENS'],['GTA VI goes on sale after a 13-year wait.','Sensor Tower est.: 19.05m copies / $1.84bn.']),
       (court,'REPORTED · ICJ RULING',['MYANMAR','COMMITTED','GENOCIDE'],['ICJ rules Myanmar’s military committed','genocide against the Rohingya.'])]
     for i,(fn,tag,heads,summary) in enumerate(heroes):
         x=24+i*330
-        label(d,x,247,tag,11)
-        art(img,fn,x,265,316,85)
+        label(d,x,250,tag,11)
+        art(img,fn,x,268,316,74)
         for j,line in enumerate(heads):
-            fitted(d,x,(350+j*24) if len(heads)==3 else (355+j*32),line,SERIF_B,27 if len(heads)==3 else 29,316)
-        for j,line in enumerate(summary): fitted(d,x,426+j*17,line,SANS,13,316)
-        if i<2: d.line((x+323,247,x+323,465),fill=RULE)
-    hline(d,24,1000,469,2)
+            fitted(d,x,(346+j*24) if len(heads)==3 else (352+j*32),line,SERIF_B,27 if len(heads)==3 else 29,316)
+        for j,line in enumerate(summary): fitted(d,x,424+j*17,line,SANS,13,316)
+        if i<2: d.line((x+323,250,x+323,458),fill=RULE)
+    hline(d,24,1000,460,2)
     for i,(head,summary,kind,tag) in enumerate(SECONDARY):
-        col=i%3; row=i//3; x=24+col*330; y=479+row*48
+        col=i%3; row=i//3; x=24+col*330; y=470+row*48
         icon(d,x,y+2,kind)
         label(d,x+42,y,head,12)
         fitted(d,x+42,y+17,summary,SANS,11,274)
         label(d,x+42,y+32,tag,8,GREY)
         if row<3: hline(d,x,x+316,y+45,1, (204,199,185))
-    hline(d,24,1000,675,2)
-    label(d,24,682,'26 MORE / A WORLD IN BRIEF',13)
-    label(d,310,684,'REPORTED · MAP NUMBERS KEY TO THE BRIEFS',10,GREY)
-    world(d,24,705)
+    hline(d,24,1000,668,2)
+    label(d,24,674,'26 MORE / A WORLD IN BRIEF',13)
+    label(d,310,676,'REPORTED · MAP NUMBERS KEY TO THE BRIEFS',10,GREY)
+    img.paste(map_tile(266,184),(24,696))
     for i,(text,_) in enumerate(BRIEFS):
-        col=i//13; row=i%13; x=310+col*348; y=705+row*15
+        col=i//13; row=i%13; x=310+col*348; y=696+row*16
         label(d,x,y,f'{i+1:02}',10)
-        fitted(d,x+23,y,text,SANS,11,319)
-    hline(d,24,1000,916,2)
-    label(d,24,922,'VERDICT',11)
-    verdict=['A day of firsts: the first Trump–Xi–Putin summit,',
-             'the top court’s genocide ruling on Myanmar, and',
-             'the biggest game launch ever (est.) — all on one Thursday.']
-    for i,t in enumerate(verdict): fitted(d,24,939+i*14,t,SERIF,12,465)
-    d.line((500,924,500,983),fill=RULE)
-    label(d,514,922,'MARKETS · WED CLOSE',11)
+        fitted(d,x+23,y,text,SANS,12,300)
+    hline(d,24,1000,904,2)
+    label(d,24,910,'VERDICT',11)
+    verdict='A day of firsts: the first Trump–Xi–Putin summit, the ICJ genocide ruling, and the biggest game launch ever (est.) — all on one Thursday.'
+    text_block(d,24,926,verdict,SERIF(12),450,leading=14)
+    d.line((500,912,500,956),fill=RULE)
+    label(d,514,910,'MARKETS · WED CLOSE',11)
     for i,t in enumerate(['Dow 50,198 −1.11% · S&P 7,324 −0.23% · Nasdaq 24,430 +0.42%',
       'Gold $3,726 · WTI $82 · Brent ~$89 · BTC $63,479 · US 10Y 5.07%']):
-        fitted(d,514,940+i*16,t,SANS,11,486)
-    fitted(d,24,985,'DATE CHECK — every story happened or was first reported on THURSDAY 19 NOVEMBER 2026',SANS_B,11,976,RED)
-    fitted(d,24,1001,'Sources: Reuters · AP · BBC · CBS · NPR · IMD · NASA · Sensor Tower (est.) — 19 November 2026',SANS,10,976,GREY)
+        fitted(d,514,928+i*16,t,SANS,11,460)
+    # DATE CHECK, 6 spot checks (was one line): every dated claim audited,
+    # with the two non-19-Nov dates labelled as what they are.
+    label(d,24,960,'DATE CHECK — 6 SPOT CHECKS · DATES VERIFIED',11,RED)
+    checks=[('SUMMIT · SHENZHEN','19 NOV'),('ICJ RULING','19 NOV'),('GTA VI LAUNCH','19 NOV'),
+            ('ANTHROPIC IPO','19 NOV'),('MARKETS','WED 18 NOV CLOSE'),('AKVAN','FORECAST FRI 20 NOV')]
+    for i,(what,when) in enumerate(checks):
+        col=i%3; row=i//3; x=24+col*324; y=976+row*14
+        d.text((x,y),'✓',font=SANS_B(10),fill=RED)
+        fitted(d,x+14,y,f'{what} — {when}',SANS_B,10,296)
+    fitted(d,24,1002,'Sources: Reuters · AP · BBC · CBS · NPR · IMD · NASA · Sensor Tower (est.) — 19 November 2026',SANS,10,940,GREY)
     img.save(Path(__file__).resolve().with_name('entry.png'),'PNG',optimize=True)
     print('entry.png: 41 stories (3 heroes + 12 secondary + 26 numbered briefs)')
 

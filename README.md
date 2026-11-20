@@ -1,5 +1,9 @@
 # The World in One Day — renewal
 
+[![make.fun · news-image-20261119](https://make.fun/badge/news-image-20261119.svg)](https://make.fun/bounty/news-image-20261119?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
+[![rank](https://make.fun/badge/news-image-20261119/episodee/nov19-world-news-v2/rank.svg)](https://make.fun/bounty/news-image-20261119/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
+[![reward](https://make.fun/badge/news-image-20261119/episodee/nov19-world-news-v2/reward.svg)](https://make.fun/bounty/news-image-20261119?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261119)
+
 A deterministic newspaper front page naming Thursday, 19 November 2026.
 Three illustrated leads show the Trump–Xi–Putin Shenzhen summit, GTA VI's
 Vice City launch, and the ICJ ruling on Myanmar's genocide against the Rohingya.
